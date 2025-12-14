@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AETHER | Particle Intelligence</title>
+    
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@300;500;700&display=swap" rel="stylesheet">
+    
+    <!-- Core Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        :root {
+            --primary: #00f3ff;
+            --secondary: #bc13fe;
+            --glass: rgba(8, 12, 18, 0.75);
+            --border: rgba(255, 255, 255, 0.15);
+            --text: #ffffff;
+            --error: #ff2a6d;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000000;
+            font-family: 'Rajdhani', sans-serif;
+            color: var(--text);
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none; /* Prevent scroll on mobile */
+        }
+
+        #input_video {
+            position: absolute;
+            top: 0; left: 0;
+            opacity: 0; pointer-events: none;
+            width: 1px; height: 1px;
+        }
+
+        #canvas-container {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            z-index: 1;
+            background: radial-gradient(circle at 50% 50%, #11111a 0%, #000000 100%);
+        }
+
+        /* --- UI LAYER --- */
+        #ui-layer {
+            position: absolute;
+            bottom: 30px;
+            left: 30px;
+            width: 340px;
+            max-width: 85vw; /* Responsive width */
+            padding: 20px;
+            border-radius: 16px;
+            background: var(--glass);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--border);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7);
+            z-index: 10;
+            transition: transform 0.3s ease;
+            max-height: 80vh;
+            overflow-y: auto;
+            scrollbar-width: none; /* Hide scrollbar Firefox */
+        }
+        #ui-layer::-webkit-scrollbar { display: none; } /* Hide scrollbar Chrome */
+
+        .header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            padding-bottom: 10px;
+        }
+
+        .header h1 {
+            font-size: 16px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            margin: 0;
+            text-transform: uppercase;
+            background: linear-gradient(90deg, #fff, var(--primary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .status-dot {
+            width: 6px; height: 6px;
+            background: #444;
+            border-radius: 50%;
+            margin-right: 10px;
+            box-shadow: 0 0 5px rgba(0,0,0,0.5);
+            transition: background 0.3s;
+        }
+        .status-dot.active { background: var(--primary); box-shadow: 0 0 8px var(--primary); }
+
+        .section-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: rgba(255,255,255,0.5);
+            margin-bottom: 8px;
+            margin-top: 15px;
+        }
+        .section-label:first-of-type { margin-top: 0; }
+
+        /* SHAPE GRID (2 columns) */
+        .shape-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+        }
+
+        .btn {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: rgba(255,255,255,0.8);
+            padding: 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            text-align: center;
+            text-transform: uppercase;
+            transition: all 0.2s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
+        .btn:active { transform: scale(0.98); }
+
+        .btn.active {
+            background: rgba(0, 243, 255, 0.1);
+            border-color: var(--primary);
+            color: #fff;
+            box-shadow: 0 0 10px rgba(0, 243, 255, 0.1);
+        }
+
+        /* COLOR ROW */
+        .color-row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .color-circle {
+            width: 24px; height: 24px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: transform 0.2s;
+        }
+        .color-circle:hover { transform: scale(1.1); }
+        .color-circle.active { border-color: #fff; transform: scale(1.15); }
+
+        /* FULLSCREEN BUTTON */
+        #fullscreen-btn {
+            position: absolute;
+            bottom: 30px;
+            right: 30px;
+            width: 48px;
+            height: 48px;
+            background: var(--glass);
+            border: 1px solid var(--border);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 20;
+            backdrop-filter: blur(10px);
+            transition: all 0.2s;
+            color: var(--primary);
+        }
+        #fullscreen-btn:hover { background: rgba(255,255,255,0.1); transform: scale(1.05); }
+        #fullscreen-btn svg { width: 24px; height: 24px; fill: currentColor; }
+
+        /* HAND TRACKING STATUS */
+        .hand-tag {
+            position: absolute;
+            top: 20px; left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.6);
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 11px;
+            letter-spacing: 1px;
+            color: var(--primary);
+            backdrop-filter: blur(4px);
+            border: 1px solid rgba(0, 243, 255, 0.2);
+            opacity: 0;
+            transition: opacity 0.5s;
+            pointer-events: none;
+            z-index: 5;
+        }
+        .hand-tag.show { opacity: 1; }
+
+        /* PORTRAIT WARNING OVERLAY */
+        #orientation-lock {
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background: #000;
+            z-index: 9999;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 20px;
+        }
+        #orientation-lock svg {
+            width: 64px; height: 64px; fill: var(--primary);
+            margin-bottom: 20px;
+            animation: rotate-phone 2s infinite;
+        }
+        #orientation-lock p {
+            font-size: 16px; letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+        
+        @keyframes rotate-phone {
+            0%, 10% { transform: rotate(0deg); }
+            40%, 60% { transform: rotate(90deg); }
+            90%, 100% { transform: rotate(0deg); }
+        }
+
+        /* Show orientation lock only on portrait mobile */
+        @media only screen and (max-width: 800px) and (orientation: portrait) {
+            #orientation-lock { display: flex; }
+            #ui-layer, #fullscreen-btn { display: none; }
+        }
+
+        /* LOADER */
+        #loader {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: #000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            transition: opacity 0.8s;
+        }
+        .spinner {
+            width: 40px; height: 40px;
+            border: 3px solid rgba(0, 243, 255, 0.2);
+            border-top: 3px solid var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 15px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ERROR OVERLAY */
+        #error-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9);
+            z-index: 1100;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 40px;
+        }
+        .retry-btn {
+            margin-top: 20px;
+            padding: 10px 24px;
+            border: 1px solid var(--error);
+            background: transparent;
+            color: var(--error);
+            font-family: inherit;
+            text-transform: uppercase;
+            cursor: pointer;
+        }
+        .retry-btn:hover { background: var(--error); color: #000; }
+
+    </style>
+</head>
+<body>
+
+    <!-- Orientation Lock Screen -->
+    <div id="orientation-lock">
+        <svg viewBox="0 0 24 24"><path d="M17 1.01L7 1c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14z"/></svg>
+        <p>Please Rotate Your Device</p>
+    </div>
+
+    <!-- Loader -->
+    <div id="loader">
+        <div class="spinner"></div>
+        <div style="font-size: 12px; letter-spacing: 3px; color: #888;">LOADING CORE</div>
+    </div>
+
+    <!-- Error Screen -->
+    <div id="error-overlay">
+        <h2 style="color: var(--error); text-transform: uppercase; letter-spacing: 2px;">System Error</h2>
+        <p id="error-msg" style="color:#bbb; max-width:400px; margin-bottom:20px;">Camera access failed.</p>
+        <button class="retry-btn" onclick="app.initCamera()">Retry Connection</button>
+    </div>
+
+    <!-- Status Tag -->
+    <div id="hand-status" class="hand-tag">HAND TRACKING ACTIVE</div>
+
+    <!-- Video (Hidden) -->
+    <video id="input_video" playsinline muted></video>
+    
+    <!-- 3D Scene -->
+    <div id="canvas-container"></div>
+
+    <!-- Fullscreen Button -->
+    <div id="fullscreen-btn" onclick="app.toggleFullscreen()" title="Zoom / Fullscreen">
+        <!-- Zoom In / Maximize Icon -->
+        <svg viewBox="0 0 24 24"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
+    </div>
+
+    <!-- Controls -->
+    <div id="ui-layer">
+        <div class="header">
+            <div class="status-dot" id="cam-dot"></div>
+            <h1>Aether Engine</h1>
+        </div>
+
+        <div class="section-label">Morph Geometry</div>
+        <div class="shape-grid">
+            <div class="btn active" onclick="app.setShape('sphere', this)">Sphere</div>
+            <div class="btn" onclick="app.setShape('cube', this)">Cube</div>
+            <div class="btn" onclick="app.setShape('cylinder', this)">Cylinder</div>
+            <div class="btn" onclick="app.setShape('cone', this)">Cone</div>
+            <div class="btn" onclick="app.setShape('pyramid', this)">Pyramid</div>
+            <div class="btn" onclick="app.setShape('prism', this)">Prism</div>
+            <div class="btn" onclick="app.setShape('saturn', this)">Saturn</div>
+            <div class="btn" onclick="app.setShape('heart', this)">Heart</div>
+        </div>
+
+        <div class="section-label">Particle Color</div>
+        <div class="color-row">
+            <div class="color-circle active" style="background: #00f3ff;" onclick="app.setColor(0, this)"></div>
+            <div class="color-circle" style="background: #bc13fe;" onclick="app.setColor(1, this)"></div>
+            <div class="color-circle" style="background: #ff0055;" onclick="app.setColor(2, this)"></div>
+            <div class="color-circle" style="background: #ffaa00;" onclick="app.setColor(3, this)"></div>
+            <div class="color-circle" style="background: #ffffff;" onclick="app.setColor(4, this)"></div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * AETHER ENGINE v2.0
+         */
+        class AetherApp {
+            constructor() {
+                this.config = {
+                    count: 18000,
+                    size: 0.14,
+                    scale: 4.5
+                };
+
+                this.state = {
+                    shape: 'sphere',
+                    targetColor: new THREE.Color(0x00f3ff),
+                    handDetected: false,
+                    isFist: false,
+                    handPos: { x: 0, y: 0 },
+                    fistStrength: 0
+                };
+
+                this.targets = {};
+                this.initThree();
+                this.generateShapes();
+                this.initMediaPipe();
+                this.animate();
+
+                // Listen for keyboard fullscreen (Ctrl + or F11 handled by browser mostly, but we can add listener)
+                window.addEventListener('keydown', (e) => {
+                    if (e.key === '+' && e.ctrlKey) {
+                        e.preventDefault();
+                        this.toggleFullscreen();
+                    }
+                });
+
+                window.addEventListener('resize', () => {
+                    this.camera.aspect = window.innerWidth / window.innerHeight;
+                    this.camera.updateProjectionMatrix();
+                    this.renderer.setSize(window.innerWidth, window.innerHeight);
+                });
+            }
+
+            initThree() {
+                this.container = document.getElementById('canvas-container');
+                this.scene = new THREE.Scene();
+                this.camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 100);
+                this.camera.position.z = 14;
+
+                this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                this.container.appendChild(this.renderer.domElement);
+
+                // Texture
+                const canvas = document.createElement('canvas');
+                canvas.width = 32; canvas.height = 32;
+                const ctx = canvas.getContext('2d');
+                const grad = ctx.createRadialGradient(16,16,0,16,16,16);
+                grad.addColorStop(0, 'rgba(255,255,255,1)');
+                grad.addColorStop(0.2, 'rgba(255,255,255,0.5)');
+                grad.addColorStop(1, 'rgba(0,0,0,0)');
+                ctx.fillStyle = grad; ctx.fillRect(0,0,32,32);
+                const tex = new THREE.CanvasTexture(canvas);
+
+                // Material
+                this.material = new THREE.PointsMaterial({
+                    size: this.config.size,
+                    map: tex,
+                    color: this.state.targetColor,
+                    transparent: true,
+                    opacity: 0.9,
+                    blending: THREE.AdditiveBlending,
+                    depthWrite: false
+                });
+
+                // Geometry
+                this.geometry = new THREE.BufferGeometry();
+                this.positions = new Float32Array(this.config.count * 3);
+                this.geometry.setAttribute('position', new THREE.BufferAttribute(this.positions, 3));
+                
+                this.particles = new THREE.Points(this.geometry, this.material);
+                this.scene.add(this.particles);
+            }
+
+            // --- SHAPE GENERATION MATH ---
+            generateShapes() {
+                const count = this.config.count;
+                const S = this.config.scale;
+                
+                // Helper to add point
+                const add = (arr, x, y, z) => arr.push(x, y, z);
+                
+                // 1. SPHERE (Fibonacci Lattice for even distribution)
+                this.targets.sphere = [];
+                for(let i=0; i<count; i++) {
+                    const phi = Math.acos(1 - 2 * (i + 0.5) / count);
+                    const theta = Math.PI * (1 + Math.sqrt(5)) * i;
+                    // Mix surface and slight volume
+                    const r = S * (0.9 + Math.random() * 0.1); 
+                    add(this.targets.sphere, 
+                        r * Math.sin(phi) * Math.cos(theta),
+                        r * Math.sin(phi) * Math.sin(theta),
+                        r * Math.cos(phi)
+                    );
+                }
+
+                // 2. CUBE (Surface + Volume)
+                this.targets.cube = [];
+                for(let i=0; i<count; i++) {
+                    // Rejection sampling for clean distribution
+                    let axis = Math.floor(Math.random() * 3);
+                    let x, y, z;
+                    if(axis === 0) { // X face
+                        x = (Math.random() > 0.5 ? 1 : -1) * S * 0.7;
+                        y = (Math.random() - 0.5) * 2 * S * 0.7;
+                        z = (Math.random() - 0.5) * 2 * S * 0.7;
+                    } else if (axis === 1) { // Y face
+                        x = (Math.random() - 0.5) * 2 * S * 0.7;
+                        y = (Math.random() > 0.5 ? 1 : -1) * S * 0.7;
+                        z = (Math.random() - 0.5) * 2 * S * 0.7;
+                    } else { // Z face
+                        x = (Math.random() - 0.5) * 2 * S * 0.7;
+                        y = (Math.random() - 0.5) * 2 * S * 0.7;
+                        z = (Math.random() > 0.5 ? 1 : -1) * S * 0.7;
+                    }
+                    add(this.targets.cube, x, y, z);
+                }
+
+                // 3. CYLINDER
+                this.targets.cylinder = [];
+                for(let i=0; i<count; i++) {
+                    const h = (Math.random() - 0.5) * 2 * S;
+                    const theta = Math.random() * Math.PI * 2;
+                    // 20% caps, 80% sides
+                    if (Math.random() < 0.2) {
+                        const r = Math.sqrt(Math.random()) * S * 0.6; // Cap
+                        const capH = (Math.random() > 0.5 ? 1 : -1) * S;
+                        add(this.targets.cylinder, r*Math.cos(theta), capH, r*Math.sin(theta));
+                    } else {
+                        const r = S * 0.6; // Side
+                        add(this.targets.cylinder, r*Math.cos(theta), h, r*Math.sin(theta));
+                    }
+                }
+
+                // 4. CONE
+                this.targets.cone = [];
+                for(let i=0; i<count; i++) {
+                    const h = (Math.random()); // 0 to 1
+                    const y = (h - 0.5) * 2 * S; // Map to Y range
+                    const rMax = S * (1 - h); // Taper
+                    if (Math.random() < 0.2) {
+                        // Base cap
+                        const r = Math.sqrt(Math.random()) * S;
+                        add(this.targets.cone, r*Math.cos(Math.random()*Math.PI*2), -S, r*Math.sin(Math.random()*Math.PI*2));
+                    } else {
+                        // Side
+                        const theta = Math.random() * Math.PI * 2;
+                        add(this.targets.cone, rMax*Math.cos(theta), y, rMax*Math.sin(theta));
+                    }
+                }
+
+                // 5. PYRAMID (Square base)
+                this.targets.pyramid = [];
+                for(let i=0; i<count; i++) {
+                    // Height from base -S to tip S
+                    const h = Math.random(); 
+                    const y = (h * 2 - 1) * S * 0.8;
+                    const sizeAtH = (1 - h) * S * 1.2; // Width at this height
+                    
+                    // 4 faces
+                    const face = Math.floor(Math.random() * 4);
+                    let x, z;
+                    const offset = (Math.random() - 0.5) * 2 * sizeAtH;
+                    
+                    if (face === 0) { x = sizeAtH; z = offset; }
+                    else if (face === 1) { x = -sizeAtH; z = offset; }
+                    else if (face === 2) { z = sizeAtH; x = offset; }
+                    else { z = -sizeAtH; x = offset; }
+                    
+                    add(this.targets.pyramid, x, y, z);
+                }
+
+                // 6. PRISM (Triangular)
+                this.targets.prism = [];
+                for(let i=0; i<count; i++) {
+                    const h = (Math.random() - 0.5) * 2 * S;
+                    // Equilateral triangle in XZ
+                    const side = Math.floor(Math.random() * 3);
+                    const t = Math.random(); // Position along side
+                    
+                    const r = S * 0.8;
+                    // Vertices
+                    const v0 = {x: 0, z: -r};
+                    const v1 = {x: r * Math.sin(2*Math.PI/3), z: -r*Math.cos(2*Math.PI/3)};
+                    const v2 = {x: -r * Math.sin(2*Math.PI/3), z: -r*Math.cos(2*Math.PI/3)}; // Adjusted rotation
+                    
+                    let px, pz;
+                    if(side===0) { px = v0.x + (v1.x-v0.x)*t; pz = v0.z + (v1.z-v0.z)*t; }
+                    else if(side===1) { px = v1.x + (v2.x-v1.x)*t; pz = v1.z + (v2.z-v1.z)*t; }
+                    else { px = v2.x + (v0.x-v2.x)*t; pz = v2.z + (v0.z-v2.z)*t; }
+                    
+                    add(this.targets.prism, px, h, pz);
+                }
+
+                // 7. SATURN
+                this.targets.saturn = [];
+                for(let i=0; i<count; i++) {
+                    if (i < count * 0.6) {
+                        // Planet Sphere
+                        const phi = Math.acos(1 - 2 * Math.random());
+                        const theta = Math.random() * Math.PI * 2;
+                        const r = S * 0.6;
+                        add(this.targets.saturn, r*Math.sin(phi)*Math.cos(theta), r*Math.sin(phi)*Math.sin(theta), r*Math.cos(phi));
+                    } else {
+                        // Rings
+                        const theta = Math.random() * Math.PI * 2;
+                        const r = S * (1.2 + Math.random() * 0.8);
+                        add(this.targets.saturn, r*Math.cos(theta), (Math.random()-0.5)*0.1, r*Math.sin(theta));
+                    }
+                }
+
+                // 8. HEART
+                this.targets.heart = [];
+                for(let i=0; i<count; i++) {
+                    // Rejection sampling for 3D volume/surface
+                    // Formula: (x^2 + 9/4y^2 + z^2 - 1)^3 - x^2z^3 - 9/80y^2z^3 = 0
+                    // Simplified parametric or rejection inside bounding box
+                    // Let's use a simpler parametric surface approximation
+                    
+                    const phi = Math.random() * Math.PI;
+                    const theta = Math.random() * Math.PI * 2;
+                    
+                    // 3D Heart parametric
+                    // x = 16 sin^3 t
+                    // y = 13 cos t - 5 cos 2t - 2 cos 3t - cos 4t
+                    // This is 2D. 
+                    // Let's use rejection inside box [-2,2]
+                    
+                    let done = false;
+                    while(!done) {
+                        const x = (Math.random() - 0.5) * 3;
+                        const y = (Math.random() - 0.5) * 3;
+                        const z = (Math.random() - 0.5) * 3;
+                        
+                        const a = x*x + (9/4)*y*y + z*z - 1;
+                        if (a*a*a - x*x*z*z*z - (9/80)*y*y*z*z*z < 0) {
+                             add(this.targets.heart, x*S*1.2, y*S*1.2, z*S*1.2);
+                             done = true;
+                        }
+                    }
+                    if (this.targets.heart.length >= count*3) break; // Safety
+                }
+                
+                // Initialize positions to Sphere
+                for(let i=0; i<this.positions.length; i++) {
+                    this.positions[i] = this.targets.sphere[i];
+                }
+            }
+
+            initMediaPipe() {
+                const video = document.getElementById('input_video');
+                const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+                
+                hands.setOptions({
+                    maxNumHands: 1,
+                    modelComplexity: 1,
+                    minDetectionConfidence: 0.5,
+                    minTrackingConfidence: 0.5
+                });
+
+                hands.onResults((results) => {
+                    const tag = document.getElementById('hand-status');
+                    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                        this.state.handDetected = true;
+                        tag.classList.add('show');
+                        
+                        const lm = results.multiHandLandmarks[0];
+                        // Pos
+                        this.state.handPos.x = (1 - lm[9].x) * 2 - 1;
+                        this.state.handPos.y = -(lm[9].y * 2 - 1);
+                        
+                        // Fist
+                        const wrist = lm[0];
+                        const tips = [8,12,16,20];
+                        let d = 0;
+                        tips.forEach(t => {
+                            const dx = lm[t].x - wrist.x;
+                            const dy = lm[t].y - wrist.y;
+                            d += Math.sqrt(dx*dx + dy*dy);
+                        });
+                        this.state.isFist = (d / 4) < 0.22;
+                    } else {
+                        this.state.handDetected = false;
+                        this.state.isFist = false;
+                        tag.classList.remove('show');
+                    }
+                });
+
+                this.hands = hands;
+                this.initCamera();
+            }
+
+            async initCamera() {
+                document.getElementById('error-overlay').style.display = 'none';
+                document.getElementById('loader').style.display = 'flex';
+                document.getElementById('loader').style.opacity = '1';
+                
+                const video = document.getElementById('input_video');
+                
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ 
+                        video: { width: 640, height: 480, facingMode: 'user' } 
+                    });
+                    video.srcObject = stream;
+                    await new Promise(r => video.onloadedmetadata = r);
+                    video.play();
+                    
+                    document.getElementById('cam-dot').classList.add('active');
+                    this.hideLoader();
+                    
+                    const process = async () => {
+                        if(!video.paused && !video.ended) await this.hands.send({image: video});
+                        requestAnimationFrame(process);
+                    };
+                    process();
+                } catch (e) {
+                    console.error(e);
+                    this.hideLoader();
+                    document.getElementById('error-overlay').style.display = 'flex';
+                }
+            }
+
+            hideLoader() {
+                const l = document.getElementById('loader');
+                l.style.opacity = '0';
+                setTimeout(() => l.style.display = 'none', 800);
+            }
+
+            setShape(name, btn) {
+                this.state.shape = name;
+                document.querySelectorAll('.shape-grid .btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+            }
+
+            setColor(idx, btn) {
+                const hex = [0x00f3ff, 0xbc13fe, 0xff0055, 0xffaa00, 0xffffff][idx];
+                this.state.targetColor.setHex(hex);
+                document.querySelectorAll('.color-circle').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+            }
+
+            toggleFullscreen() {
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen().catch(e => console.log(e));
+                } else {
+                    document.exitFullscreen();
+                }
+            }
+
+            animate() {
+                requestAnimationFrame(this.animate.bind(this));
+                
+                const time = Date.now() * 0.001;
+                const positions = this.geometry.attributes.position.array;
+                const targetPos = this.targets[this.state.shape];
+
+                // Smooth Color
+                this.material.color.lerp(this.state.targetColor, 0.05);
+
+                // Hand Interaction Physics
+                const targetFist = this.state.isFist ? 1.0 : 0.0;
+                this.state.fistStrength += (targetFist - this.state.fistStrength) * 0.1;
+
+                // Rotation
+                if (this.state.handDetected) {
+                    const rx = this.state.handPos.y * 1.0;
+                    const ry = this.state.handPos.x * 1.0;
+                    this.particles.rotation.x += (rx - this.particles.rotation.x) * 0.1;
+                    this.particles.rotation.y += (ry - this.particles.rotation.y) * 0.1;
+                } else {
+                    this.particles.rotation.y += 0.0015; // Idle spin
+                    this.particles.rotation.x *= 0.95;
+                }
+
+                // Particle Loop
+                for (let i = 0; i < this.config.count; i++) {
+                    const ix = i * 3;
+                    let tx = targetPos[ix];
+                    let ty = targetPos[ix+1];
+                    let tz = targetPos[ix+2];
+
+                    // Noise / Breathing
+                    const noise = Math.sin(time * 2 + i * 0.02) * 0.1;
+                    tx += noise; ty += noise; tz += noise;
+
+                    // Fist Implosion
+                    if (this.state.fistStrength > 0.01) {
+                        const str = this.state.fistStrength;
+                        const factor = 1 - (str * 0.85); // Shrink to 15%
+                        tx *= factor; ty *= factor; tz *= factor;
+                        
+                        // Jitter energy
+                        if (str > 0.8) {
+                            tx += (Math.random()-0.5)*0.3;
+                            ty += (Math.random()-0.5)*0.3;
+                            tz += (Math.random()-0.5)*0.3;
+                        }
+                    }
+
+                    // Lerp
+                    const speed = 0.05 + this.state.fistStrength * 0.1;
+                    positions[ix] += (tx - positions[ix]) * speed;
+                    positions[ix+1] += (ty - positions[ix+1]) * speed;
+                    positions[ix+2] += (tz - positions[ix+2]) * speed;
+                }
+
+                this.geometry.attributes.position.needsUpdate = true;
+                this.renderer.render(this.scene, this.camera);
+            }
+        }
+
+        window.app = new AetherApp();
+    </script>
+</body>
+</html>
